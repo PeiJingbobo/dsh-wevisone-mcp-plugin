@@ -30,6 +30,17 @@ npm pack && dsh plugin add ./dsh-wevisone-mcp-plugin-*.tgz
 
 安装后出现在 DSH 插件列表里，重启 DSH 生效。
 
+## 怎么确认装的是哪个版本
+
+调一次 `wevisone_doctor`，返回里有 `version`：
+
+```json
+{"ok": true, "version": "0.3.0", "endpoint": "http://192.168.1.12:8000", ...}
+```
+
+对不上预期就去更新（`dsh plugin add github:PeiJingbobo/dsh-wevisone-mcp-plugin`）再重启 DSH。
+版本变更记录见 [CHANGELOG.md](CHANGELOG.md)。
+
 ## 配置
 
 在 profile 的 `cordis.patch.yml` 里按 id 覆盖：

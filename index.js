@@ -22,6 +22,8 @@ export const name = '@wevisone/dsh-wevisone-mcp-plugin'
 export const inject = ['tools', 'skills']
 
 const PKG_NAME = 'dsh-wevisone-mcp-plugin'
+// Keep in sync with package.json; test/save-dir.mjs asserts they match.
+const PKG_VERSION = '0.3.0'
 const DEFAULT_ENDPOINT = 'http://127.0.0.1:8000'
 const DEFAULT_TIMEOUT_MS = 180_000
 // homedir() is defined on every platform; process.env.HOME is not (Windows).
@@ -278,8 +280,9 @@ export async function apply(ctx, config = {}) {
   const doctorTool = {
     name: 'wevisone_doctor',
     description:
-      'Report WeVisOne-VL host readiness: endpoint reachability, model residency, GPU, and the ' +
-      'configured mask directory. Call this first when a prediction fails.',
+      'Report WeVisOne-VL host readiness: plugin version, endpoint reachability, token presence, ' +
+      'and the configured mask directory. Call this first when a prediction fails, or to check ' +
+      'which plugin build is actually loaded.',
     parameters: { type: 'object', properties: {}, additionalProperties: false },
     output: {
       schema: { type: 'string' },
@@ -302,6 +305,7 @@ export async function apply(ctx, config = {}) {
         const reachable = response.status !== 0
         return JSON.stringify({
           ok: reachable,
+          version: PKG_VERSION,
           endpoint,
           token_configured: Boolean(token),
           mask_dir: maskDir,
@@ -310,6 +314,7 @@ export async function apply(ctx, config = {}) {
       } catch (error) {
         return JSON.stringify({
           ok: false,
+          version: PKG_VERSION,
           endpoint,
           token_configured: Boolean(token),
           mask_dir: maskDir,

@@ -7,7 +7,7 @@
  */
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as plugin from '../index.js'
@@ -96,7 +96,16 @@ try {
   check('mask written to configured dir', defaultFiles.length === 1, defaultFiles.join(','))
   check('local_path points at the real file', existsSync(second.artifacts[0].local_path), second.artifacts[0].local_path)
 
-  // 3) the built-in default is a real home path, never a literal "undefined"
+  // 3) version visibility: doctor reports it, and it matches package.json
+  let doctorTool
+  const ctx2 = { ...ctx, tools: { register: (d) => { if (d.name === 'wevisone_doctor') doctorTool = d; return () => {} } } }
+  await plugin.apply(ctx2, { endpoint, maskDir: defaultDir })
+  const doctor = JSON.parse(await doctorTool.execute({}, exec))
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  check('doctor reports a version', typeof doctor.version === 'string' && doctor.version.length > 0, doctor.version)
+  check('version matches package.json', doctor.version === pkg.version, `${doctor.version} vs ${pkg.version}`)
+
+  // 4) the built-in default is a real home path, never a literal "undefined"
   const bare = JSON.parse(JSON.stringify(await plugin.apply.length), undefined, 0) // noop keeps linters honest
   check('default mask dir is under home', join(homedir(), 'wevisone-artifacts').startsWith(homedir()), bare && '')
   check('default mask dir has no "undefined"', !join(homedir(), 'wevisone-artifacts').includes('undefined'))
