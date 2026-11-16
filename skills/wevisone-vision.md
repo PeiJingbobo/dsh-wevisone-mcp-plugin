@@ -118,6 +118,23 @@ src.save(r"C:/path/photo_cutout.png")         # RGBA PNG, background transparent
 keeps the transparent margin out of the file. If the subject looks half-transparent,
 the matte was resized — open both and check `matte.size == src.size` before cropping.
 
+## When the user says "save it where the original is"
+
+The attachment path is content-addressed and its **file name is the user's original
+name** (e.g. `u=4231193786,3187314859&fm=3028&app=3028&f=JPEG&fmt=auto.webp`). Do
+not ask which folder: search the usual ones for that name.
+
+```powershell
+$stem = "4231193786"   # the distinctive id inside the attachment file name
+@("$env:USERPROFILE\Downloads", "$env:USERPROFILE\Pictures",
+  "$env:USERPROFILE\Desktop", "$env:USERPROFILE\Documents") |
+  ForEach-Object { if (Test-Path $_) { Get-ChildItem $_ -Recurse -File -Filter "*$stem*" } }
+```
+
+Already present a copy in the workspace? Compare it to the hit before writing so you do
+not overwrite a different file with the same stem. Writing the result next to the source
+is what "原位置" means; asking for a path is a fallback only when the search finds nothing.
+
 ## Pitfalls
 
 - **Do not paste images as base64 into this conversation.** Pass `image_path`; the

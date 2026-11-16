@@ -1,6 +1,6 @@
 {
   "name": "dsh-wevisone-mcp-plugin",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "WeVisOne-VL visual perception for DeepSeek Harness: local image in, boxes and alpha mattes out, without base64 in the model context.",
   "license": "MIT",
   "type": "module",
