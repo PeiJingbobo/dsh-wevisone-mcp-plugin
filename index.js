@@ -23,7 +23,7 @@ export const inject = ['tools', 'skills']
 
 const PKG_NAME = 'dsh-wevisone-mcp-plugin'
 // Keep in sync with package.json; test/save-dir.mjs asserts they match.
-const PKG_VERSION = '0.4.4'
+const PKG_VERSION = '0.5.0'
 const DEFAULT_ENDPOINT = 'http://127.0.0.1:8000'
 const DEFAULT_TIMEOUT_MS = 180_000
 // homedir() is defined on every platform; process.env.HOME is not (Windows).
@@ -179,6 +179,44 @@ export async function apply(ctx, config = {}) {
     maskDir = resolve(DEFAULT_MASK_DIR)
   }
   const timeoutMs = Number(config.timeoutMs ?? DEFAULT_TIMEOUT_MS)
+
+  // Cost counters for this plugin instance. They exist so a run can be compared
+  // with the previous one instead of eyeballed: doctor reports them, and `reset`
+  // zeroes them between experiments.
+  const metrics = {
+    started_at: new Date().toISOString(),
+    predict_calls: 0,
+    failed_calls: 0,
+    rejected_queries: 0,
+    artifacts: 0,
+    total_latency_s: 0,
+    last_task: null,
+    last_latency_s: 0,
+  }
+  function resetMetrics() {
+    metrics.started_at = new Date().toISOString()
+    metrics.predict_calls = 0
+    metrics.failed_calls = 0
+    metrics.rejected_queries = 0
+    metrics.artifacts = 0
+    metrics.total_latency_s = 0
+    metrics.last_task = null
+    metrics.last_latency_s = 0
+  }
+  function metricsSummary() {
+    const calls = metrics.predict_calls
+    return {
+      since: metrics.started_at,
+      predict_calls: calls,
+      failed_calls: metrics.failed_calls,
+      rejected_queries: metrics.rejected_queries,
+      artifacts: metrics.artifacts,
+      total_latency_s: Math.round(metrics.total_latency_s * 100) / 100,
+      avg_latency_s: calls ? Math.round((metrics.total_latency_s / calls) * 100) / 100 : 0,
+      last_task: metrics.last_task,
+      last_latency_s: metrics.last_latency_s,
+    }
+  }
   const headers = bearer(token)
 
   async function postPredict(body) {
@@ -258,13 +296,26 @@ export async function apply(ctx, config = {}) {
         body.image_base64 = bytes.toString('base64')
       }
 
+      const startedAt = Date.now()
       let payload
       try {
         const result = await postPredict(body)
         payload = result.payload
       } catch (error) {
+        metrics.failed_calls += 1
+        metrics.predict_calls += 1
+        metrics.last_task = body.task
+        metrics.total_latency_s += (Date.now() - startedAt) / 1000
         return JSON.stringify({ ok: false, error: `request failed: ${error.message}` })
       }
+
+      metrics.predict_calls += 1
+      metrics.last_task = payload?.task ?? body.task
+      metrics.last_latency_s = Math.round(Number(payload?.latency_s ?? (Date.now() - startedAt) / 1000) * 100) / 100
+      metrics.total_latency_s += metrics.last_latency_s
+      if (payload?.rejected) metrics.rejected_queries += 1
+      if (!payload?.ok) metrics.failed_calls += 1
+      if (Array.isArray(payload?.artifacts)) metrics.artifacts += payload.artifacts.length
 
       if (!payload?.ok || !Array.isArray(payload.artifacts) || payload.artifacts.length === 0) {
         return JSON.stringify(payload)
@@ -297,12 +348,21 @@ export async function apply(ctx, config = {}) {
       'Report WeVisOne-VL host readiness: plugin version, endpoint reachability, token presence, ' +
       'and the configured mask directory. Call this first when a prediction fails, or to check ' +
       'which plugin build is actually loaded.',
-    parameters: { type: 'object', properties: {}, additionalProperties: false },
+    parameters: {
+      type: 'object',
+      properties: {
+        reset: {
+          type: 'boolean',
+          description: 'Zero the session cost counters after reporting them (start a fresh measurement).',
+        },
+      },
+      additionalProperties: false,
+    },
     output: {
       schema: { type: 'string' },
       render: (_args, value) => [{ type: 'text', text: value }],
     },
-    async execute() {
+    async execute(args = {}) {
       try {
         const { response, payload } = await callJson(
           fetch,
@@ -317,14 +377,17 @@ export async function apply(ctx, config = {}) {
         // /predict validates the task, so reaching it proves the host is up and
         // authenticated; that validation error is a good reachability signal.
         const reachable = response.status !== 0
-        return JSON.stringify({
+        const report = {
           ok: reachable,
           version: PKG_VERSION,
           endpoint,
           token_configured: Boolean(token),
           mask_dir: maskDir,
           probe: payload?.error ?? `HTTP ${response.status}`,
-        })
+          session: metricsSummary(),
+        }
+        if (args.reset === true) resetMetrics()
+        return JSON.stringify(report)
       } catch (error) {
         return JSON.stringify({
           ok: false,
@@ -332,6 +395,7 @@ export async function apply(ctx, config = {}) {
           endpoint,
           token_configured: Boolean(token),
           mask_dir: maskDir,
+          session: metricsSummary(),
           error: error.message,
         })
       }

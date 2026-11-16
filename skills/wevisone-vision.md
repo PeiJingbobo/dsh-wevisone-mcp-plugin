@@ -1,291 +1,165 @@
-# Using WeVisOne-VL vision tools
+# WeVisOne-VL vision tools
 
-`wevisone_predict` runs a vision model over **a local image file** and returns boxes
-(and, for pixel tasks, PNG alpha mattes written next to you). `wevisone_doctor`
-reports whether the host is reachable.
+`wevisone_predict` runs a vision model over a **local image file** and returns boxes,
+plus PNG alpha mattes for pixel tasks. `wevisone_doctor` reports host readiness, the
+installed plugin version, and this session's cost counters.
 
-The image never enters this conversation: you pass a path, you get back coordinates
-and local file paths.
+The image never enters the conversation: pass a path, get coordinates and local paths.
 
-**Use these tools instead of your own image understanding.** Even if you can see an
-attached image, the host model is the authority here: its coordinates and mattes are
-what downstream steps consume. Answering from your own vision silently produces boxes
-nothing else can use.
-
-## Before the first call
-
-Call `wevisone_doctor` when a prediction fails or before a batch you cannot easily
-retry. It reports the endpoint, whether a token is configured, and the mask directory.
-`ok:false` means the host is unreachable or the token is wrong — fix that first; the
-vision model is not the problem.
-
-## Calling it
-
-```js
-wevisone_predict({
-  image_path: "/absolute/path/to/photo.jpg",  // preferred
-  task: "segmentation",
-  query: "sofa",
-})
-```
-
-- `image_path` — a path **on the machine running this plugin**. Use this.
-- `upload_id` — only when the image already sits on the server (it came back from a
-  previous upload). Provide exactly one of `image_path` / `upload_id`.
-- `task` — see the table below; defaults to `detection`.
-- `query` — what to find. Most tasks require it; the empty string is only valid for
-  `ocr` and `freeform`.
-- `save_dir` — optional override for where mattes are written.
+**Use these tools instead of your own vision.** Even with an image attached, the host
+model is the authority — its boxes and mattes are what downstream steps consume.
 
 ## Tasks
 
-| task | query | pixel output | use it for |
+| task | query | matte | for |
 |---|---|---|---|
-| `detection` | yes | — | "is there an X, and where" |
-| `referring` | yes | — | a phrase naming one object ("the cup next to the sink") |
-| `point` | yes | — | one point per instance |
-| `count_box` | yes | — | count instances, with boxes |
-| `count_point` | yes | — | count only |
-| `segmentation` | yes | ✅ matte | mask one named object — **use this for cutouts** |
-| `matting` | yes | ✅ matte | soft alpha edge (hair/fur/glass); often returns several `<OBJ>` |
+| `detection` | yes | — | is there an X, and where |
+| `referring` | yes | — | a phrase naming one object |
+| `point` / `count_point` | yes | — | one point per instance / count only |
+| `count_box` | yes | — | count, with boxes |
+| **`segmentation`** | yes | ✅ | **one named object — use for cutouts** |
+| `matting` | yes | ✅ | soft edge (hair/fur/glass); may return several `<OBJ>` |
 | `ocr` | no | — | read all text |
-| `ocr_grounding` | yes | — | locate a specific text string |
-| `visual_prompt` | yes | — | free-form VQA about a region |
-| `freeform` | no | — | anything else, raw model answer |
+| `ocr_grounding` | yes | — | locate a text string |
+| `visual_prompt` | yes | — | VQA about a region |
+| `freeform` | no | — | anything else |
 
-`segmentation` and `matting` are the only tasks that produce files.
+Only `segmentation` and `matting` produce files. Tasks are not interchangeable: asking
+`detection` for a matte gets you nothing.
 
-## Reading the result
+## Call shape
+
+```js
+wevisone_predict({
+  image_path: "/abs/path/photo.jpg",   // or upload_id, never both
+  task: "segmentation",               // defaults to detection
+  query: "sofa",                      // required except ocr / freeform
+  save_dir: "C:/work/out",            // per call, overrides configured maskDir
+})
+```
+
+`image_path` is a path on **this** machine. Never paste image bytes as base64 — the tool
+reads the file itself; base64 is the one thing this design exists to avoid.
+
+A wrong `query` is the usual failure: `"sofa"` works, `"living room"` does not. Use the
+noun the object would be labelled with.
+
+## Response
 
 ```json
-{
-  "ok": true, "task": "segmentation", "query": "sofa", "rejected": false,
-  "boxes": [[0.03, 0.454, 0.964, 0.876]], "box_count": 1,
-  "artifacts": [{"index": 0, "url": "/artifacts/…", "bytes": 23538,
-                 "local_path": "/Users/you/wevisone-masks/segmentation-000-….png",
-                 "stats": {"alpha_min": 0.0, "alpha_max": 1.0, "alpha_mean": 0.25,
-                           "coverage": 0.26, "size": [640, 640],
-                           "bbox": [19, 290, 617, 560], "touches_edge": false,
-                           "verdict": "ok"}}],
-  "artifact_count": 1, "latency_s": 3.2
-}
+{"ok": true, "task": "segmentation", "query": "sofa", "rejected": false,
+ "boxes": [[0.03, 0.454, 0.964, 0.876]], "box_count": 1,
+ "artifacts": [{ "index": 0, "local_path": "…/segmentation-000-….png",
+   "stats": {"coverage": 0.26, "alpha_max": 1.0, "alpha_mean": 0.25,
+             "bbox": [19, 290, 617, 560], "size": [640, 640],
+             "touches_edge": false, "verdict": "ok"}}],
+ "artifact_count": 1, "latency_s": 3.2}
 ```
 
-- `boxes` are **normalised xyxy in 0–1**. Multiply by image width/height for pixels.
-- `rejected: true` with `boxes: []` means the model looked and **did not find it**.
-  That is a valid answer, not an error — do not retry the same query.
-- `artifacts[].local_path` is a real PNG on this machine, one per box, in the same
-  order. The matte is an 8-bit grayscale alpha map, full image size. Open it with
-  your image tools; do not try to interpret the base64 `url` by hand.
-- `ok:false` carries `error`. Report it; do not guess a result.
+- `boxes` are **normalised xyxy, 0–1**; multiply by image size for pixels.
+- `rejected: true` + empty `boxes` = the model looked and did **not** find it. A valid
+  answer, not an error. Do not retry the same query.
+- `artifacts[].local_path` is a real PNG here; `stats.size` may be smaller than the
+  source (the server downscales) — resize before compositing.
+- `ok:false` carries `error`. Report it; do not guess.
 
-## Workflows
+## Verify with numbers, never by looking
 
-**Mask an object, then use the mask.**
-```js
-const r = wevisone_predict({ image_path: p, task: "segmentation", query: "sofa" })
-// r.artifacts[0].local_path → feed into the next step (crop, composite, measure)
-```
+`stats` is the answer. Opening the matte costs a whole image in context; these cost bytes.
 
-**Find and count.**
-```js
-wevisone_predict({ image_path: p, task: "count_box", query: "window" })
-// r.box_count is the count; r.boxes gives each location
-```
+| field | sane | bad means |
+|---|---|---|
+| `verdict` | `"ok"` | `"suspect"` + `problems` — report those, do not "have a look" |
+| `coverage` | 0.01–0.9 | `0` empty mask; `>0.95` leaked over the frame |
+| `alpha_max` | ≥0.9 | weak matte, or a genuinely translucent subject |
+| `alpha_mean` | 0.05–0.6 | very low with ok coverage → only edges captured |
+| `touches_edge` | `false` | subject clipped by the frame, or mask bleeding in |
+| `bbox` | inside `0..size` | compare with `boxes × size` — the subject sits there |
 
-**Read a screenshot.**
-```js
-wevisone_predict({ image_path: p, task: "ocr" })
-// the text is in r.response
-```
+**`verdict: "ok"` means compose and finish.** Not one inspection script: no region
+probes, no connected-component audits, no "just to be safe" re-composite. Need another
+number? Compute it in the same script — one write, one run. A clean run is
+**predict → compose → save → done**.
 
-**Cut one object out as a transparent PNG.**
-```js
-const r = wevisone_predict({ image_path: p, task: "segmentation", query: "watermelon slice",
-                             save_dir: "C:/work/out" })   // masks land here
-// if r.box_count > 1, one mask per box: take the largest by area, not index 0
-```
+**Image reads: a cutout costs zero.** One is the hard ceiling, and only for:
+1. choosing between masks whose areas are close, so you need to know *which object*;
+2. `verdict: "suspect"` and the shape tells you how to fix the `query`;
+3. the user explicitly asked to see it.
 
-Then compose once — do not hand-roll this three times:
+**Never build previews to look at** — no checkerboard renders, no "original | cutout |
+back" panels, no mask-overlay-on-source images — unless the user asked. Those carry the
+whole scene you were told to cut away, at full context price.
+
+**Never rebuild the mask because edges look imperfect.** Semantic mattes lose fine
+detail (whiskers, thin lines) by nature; that is expected. Rebuild only when `stats` show
+a real failure or the user asks for better edges — and then it must pass the same numeric
+check: composite back onto the original background, `mean|Δ| ≤ 2/255`.
+
+## Cutout recipe
 
 ```python
 from PIL import Image
 src   = Image.open(r"C:/path/photo.jpg").convert("RGBA")
 matte = Image.open(r"C:/work/out/segmentation-000-….png").convert("L")
-if matte.size != src.size:                    # the server may downscale
+if matte.size != src.size:
     matte = matte.resize(src.size, Image.LANCZOS)
 
-x0, y0, x1, y1 = stats["bbox"]                # from the predict response, 5% threshold
-trim_box = (x0, y0, x1 + 1, y1 + 1)           # PIL crop is exclusive on the right
+x0, y0, x1, y1 = stats["bbox"]          # from the response, 5% threshold
+box = (x0, y0, x1 + 1, y1 + 1)          # PIL crop is exclusive on the right
 
-full = src.copy(); full.putalpha(matte)       # whole canvas, subject in place
-full.save(r"C:/path/photo_cutout_full.png")
+full = src.copy(); full.putalpha(matte)                       # keeps canvas position
+full.save(r"C:/final/dir/photo_cutout_full.png")
 
-trimmed = src.crop(trim_box)
-trimmed.putalpha(matte.crop(trim_box))
-trimmed.save(r"C:/path/photo_cutout.png")
+trim = src.crop(box); trim.putalpha(matte.crop(box))          # tight, for stickers
+trim.save(r"C:/final/dir/photo_cutout.png")
 ```
 
-`putalpha` is the whole trick: the matte already is the alpha channel — no per-pixel loop.
+`putalpha` is the whole trick — the matte *is* the alpha channel, no per-pixel loop.
 
 **Do not trim with a bare `matte.getbbox()`.** A soft matte keeps alpha 1–12 scattered
-around the edges, so `getbbox()` sees "content" almost everywhere and the "trimmed" file
-comes out nearly the full canvas (a real run got 516×479 instead of 471×432).
-`stats["bbox"]` is the same measurement at a sane threshold — use it.
+around, so `getbbox()` sees content nearly everywhere; a real run produced 516×479 where
+`stats["bbox"]` said 471×432. Use `stats["bbox"]`.
 
-## Verify with the numbers, not by opening the image
+## Saving to "the original location"
 
-`stats` already answers "is this matte sane". Opening the PNG costs a whole image in
-your context; these fields cost a few dozen bytes. **Do not call `read_image` on a
-matte to check that it worked.**
-
-| field | sane range | what a bad value means |
-|---|---|---|
-| `coverage` | 0.01 – 0.9 | `0` → empty mask, the query missed; `>0.95` → mask leaked over the frame |
-| `alpha_max` | ≥ 0.9 | lower → weak matte, or the subject really is translucent (glass, smoke, water) |
-| `alpha_mean` | 0.05 – 0.6 | very low with decent coverage → only edges captured |
-| `touches_edge` | `false` | `true` → subject likely clipped by the frame, or mask bleeding into the border |
-| `bbox` | inside `0..size` | compare with the reported `boxes` (multiply by `size`) — the subject should sit near them |
-| `size` | any | the matte's own pixel size; the server may downscale, so resize to the source size before compositing |
-
-**`verdict` is the answer.** `"ok"` means the matte is usable — compose it and finish.
-`"suspect"` comes with `problems` (e.g. `["empty mask"]`) — report those; do not "have a look".
-
-`"ok"` also means **do not write inspection scripts to double-check**. No region probes, no
-connected-component audits, no re-composite "just to be safe": the server already measured
-the mask. If you want one more number, compute it inside the same composite script — one
-write, one run — instead of a second round trip. A clean `verdict` run is: predict →
-compose → save → done.
-
-Checking `verdict` costs nothing:
-```python
-if stats["verdict"] != "ok":
-    raise SystemExit("mask unusable: " + ", ".join(stats.get("problems", [])))
-# otherwise: compose and stop
-```
-
-**Open the image only when:**
-1. you must choose between several masks and the areas are close, so you need to know
-   *which object* each one is; or
-2. `verdict` is `"suspect"` and seeing the shape tells you whether to retry with a better
-   `query`; or
-3. the user explicitly asked to see the result.
-
-**Do not build previews to look at.** No checkerboard renders, no "original | cutout |
-back-in-place" comparison panels, no mask-overlay-on-the-source images — **unless the
-user asked for one**. Those images contain the whole scene (all the content you were
-told to cut away), and reading one puts that scene into the conversation at full price.
-The numbers already answered the question.
-
-A cutout costs **zero** image reads. One is the hard ceiling and needs a reason from the
-list above.
-
-## Saving into a folder outside the workspace
-
-Writing the result next to the original usually lands outside the session workspace, and the
-file sandbox will refuse it:
-
-```
-Copy-Item : 对路径 "...\Downloads\x.png" 的访问被拒绝。  (AccessDenied)
-```
-
-**Best: never copy at all.** Have the one composite script `save()` straight to the final
-path (the original folder). That is a single write inside a normal tool run and avoids a
-second step — and a second refusal — entirely:
-
-```python
-full.save(os.path.join(R"\Users\you\Downloads", "photo_cutout_full.png"))
-```
-
-If a separate copy is already needed and gets refused, do exactly one of these:
-
-1. **Retry the same copy with sandbox escalation** — `sandbox_permissions: danger-full-access`
-   plus a `justification` saying the user asked for the original folder. This is the normal
-   path and it works; the tool asks the user for approval.
-2. If approval is unavailable, keep the file in the workspace and tell the user the exact
-   command to copy it themselves.
-
-Never silently deliver only the workspace copy after a denial — that is precisely the step
-the user cares about.
-
-When presenting, list the files **at their final location** (the original folder), not the
-intermediate workspace copies.
-
-**Do not rebuild the mask by hand because the edges look imperfect.** Semantic mattes lose
-fine detail (whiskers, thin lines) by nature — that is expected, not a defect. Rebuild only
-when `stats` show a real failure (empty, leaked, clipped) **or** the user asks for higher
-edge quality. If you do rebuild, the same numeric check must hold: composite back onto the
-original background and require `mean|Δ| ≤ 2/255`.
-
-## Use the workspace python, not the system one
-
-`PIL`/`numpy` live in the DSH runtime, not in whatever `python` is on PATH. Calling the
-system interpreter costs a failed step every time:
+The attachment's file name **is** the user's original name. Do not ask which folder —
+search for it:
 
 ```powershell
-# wrong: ModuleNotFoundError: No module named 'PIL'
-python -c "from PIL import Image; ..."
-
-# right: take the path from load_workspace_dependencies once, reuse it
-& "C:\Users\<you>\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\python\python.exe" script.py
-```
-
-Call `load_workspace_dependencies` **before** the first image step, not after a failure.
-
-## "Original place": two meanings, resolve both in one pass
-
-"放到原位置" can mean either, and guessing wrong costs a round trip:
-
-| reading | what the user gets |
-|---|---|
-| **canvas position** — subject stays where it sat in the frame | full-size RGBA with alpha, no crop |
-| **directory** — file next to the source image | a copy beside the original file |
-
-Do not pick one and hope. Produce the full-canvas RGBA (cheap, it is the same composite)
-**and** drop a copy next to the source using the search rule below, then say which is
-which. That satisfies both readings with zero extra questions.
-
-## When the user says "save it where the original is"
-
-The attachment path is content-addressed and its **file name is the user's original
-name** (e.g. `u=4231193786,3187314859&fm=3028&app=3028&f=JPEG&fmt=auto.webp`). Do
-not ask which folder: search the usual ones for that name.
-
-```powershell
-$stem = "4231193786"   # the distinctive id inside the attachment file name
+$stem = "4231193786"   # the id inside the attachment file name
 @("$env:USERPROFILE\Downloads", "$env:USERPROFILE\Pictures",
   "$env:USERPROFILE\Desktop", "$env:USERPROFILE\Documents") |
   ForEach-Object { if (Test-Path $_) { Get-ChildItem $_ -Recurse -File -Filter "*$stem*" } }
 ```
 
-Already present a copy in the workspace? Compare it to the hit before writing so you do
-not overwrite a different file with the same stem. Writing the result next to the source
-is what "原位置" means; asking for a path is a fallback only when the search finds nothing.
+"放到原位置" has two readings — **canvas position** (subject stays put in the frame) and
+**directory** (file beside the source). Give both: the full-canvas RGBA *is* the first,
+then save a copy at the found path. No questions needed.
+
+**Save straight to the final path from that one script** — a separate `Copy-Item` into a
+folder outside the workspace can be refused by the file sandbox:
+
+```
+Copy-Item : 对路径 "...\Downloads\x.png" 的访问被拒绝。   (AccessDenied)
+```
+
+If a copy is still refused: retry **the same copy** with `sandbox_permissions:
+danger-full-access` plus a `justification` saying the user asked for that folder. Never
+answer a denial by delivering only the workspace copy — that is the step the user cares
+about. Present the files **at their final location**.
+
+## Environment
+
+`PIL`/`numpy` live in the DSH runtime, not on PATH: call `load_workspace_dependencies`
+once, before the first image step, and use the `python` it returns. The system `python`
+fails with `No module named 'PIL'`.
+
+Delete the helper script when the run is done — it is scaffolding, not a deliverable.
 
 ## Pitfalls
 
-- **Do not paste images as base64 into this conversation.** Pass `image_path`; the
-  plugin reads the file itself. Base64 is the one thing this design exists to avoid.
-- **Large images are fine.** The server downscales to its own pixel budget before
-  inference; boxes are normalised, so they still apply to the original resolution.
-- **Masks are transient on the server but local here.** The plugin copies each matte
-  into `maskDir` during the call, so keep the returned `local_path` — the server URL
-  expires in minutes.
-- **A wrong `query` is the usual failure.** "sofa" works; "living room" does not.
-  Use the noun the object would be labelled with.
-- **Tasks are not interchangeable.** `detection` answers "where"; only
-  `segmentation`/`matting` write mattes. Asking for a matte from `detection` returns
-  nothing useful.
-- **One image per call.** Loop for batches; do not pass arrays.
-- **`read_image` is the expensive move.** Each call puts a full image into this
-  conversation. `stats.verdict` covers correctness; only look when identity or a visual
-  judgement is genuinely needed.
-- **Preview images are not deliverables.** A checkerboard/overlay/comparison render is
-  extra work that also drags the whole scene into context when read. Ship the RGBA PNG.
-- **`matting` can return many masks.** Every `<OBJ>` in the answer becomes an artifact,
-  and each one costs a decode pass. For "cut out this one object" use `segmentation`;
-  if you already have several masks, pick by area (`matte.getbbox()` size), not by index.
-- **`save_dir` is per call** and overrides the configured `maskDir`; use it so masks land
-  next to the output you are building.
-- **Delete your helper script when the run is done** (`Remove-Item cutout.py`). It is
-  scaffolding, not a deliverable, and leaving three of them per task is clutter.
+- Mats expire on the server; `local_path` is copied locally during the call — keep it.
+- One image per call; loop for batches, never pass arrays.
+- `matting` emits one matte per `<OBJ>` and each costs a decode pass. For one object use
+  `segmentation`; with several, pick by area (`stats.bbox`), not by index.
+- Large images are fine: the server downscales, and normalised boxes still apply.

@@ -30,6 +30,23 @@ npm pack && dsh plugin add ./dsh-wevisone-mcp-plugin-*.tgz
 
 安装后出现在 DSH 插件列表里，重启 DSH 生效。
 
+## 成本可观测
+
+`wevisone_doctor` 返回本插件的会话计数，用来看「这一轮到底花了多少」而不是凭感觉：
+
+```json
+{"ok": true, "version": "0.5.0", "...": "...",
+ "session": {"since": "2026-11-17T01:40:00.000Z",
+             "predict_calls": 3, "failed_calls": 0, "rejected_queries": 0,
+             "artifacts": 3, "total_latency_s": 21.4,
+             "avg_latency_s": 7.13, "last_task": "segmentation",
+             "last_latency_s": 7.02}}
+```
+
+- 计数器只统计**本插件**自己的调用（模型侧的 `read_image` 我看不到）
+- `wevisone_doctor({"reset": true})` 先把计数报出来再清零，方便做 A/B 对比
+- `avg_latency_s` 偏高通常意味着 `matting` 出了很多掩码，或服务端在排队
+
 ## 怎么确认装的是哪个版本
 
 调一次 `wevisone_doctor`，返回里有 `version`：

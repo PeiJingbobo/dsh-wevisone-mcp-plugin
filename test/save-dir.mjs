@@ -55,6 +55,7 @@ const imagePath = join(workspace, 'photo.png')
 writeFileSync(imagePath, PNG)
 
 let predictTool
+let doctorTool
 const ctx = {
   logger: { warn: () => {} },
   on: () => () => {},
@@ -62,6 +63,7 @@ const ctx = {
   tools: {
     register: (definition) => {
       if (definition.name === 'wevisone_predict') predictTool = definition
+      if (definition.name === 'wevisone_doctor') doctorTool = definition
       return () => {}
     },
   },
@@ -97,15 +99,29 @@ try {
   check('local_path points at the real file', existsSync(second.artifacts[0].local_path), second.artifacts[0].local_path)
 
   // 3) version visibility: doctor reports it, and it matches package.json
-  let doctorTool
-  const ctx2 = { ...ctx, tools: { register: (d) => { if (d.name === 'wevisone_doctor') doctorTool = d; return () => {} } } }
-  await plugin.apply(ctx2, { endpoint, maskDir: defaultDir })
   const doctor = JSON.parse(await doctorTool.execute({}, exec))
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
   check('doctor reports a version', typeof doctor.version === 'string' && doctor.version.length > 0, doctor.version)
   check('version matches package.json', doctor.version === pkg.version, `${doctor.version} vs ${pkg.version}`)
 
-  // 4) the built-in default is a real home path, never a literal "undefined"
+  // 4) session cost counters: doctor reports the work already done, and resets on demand
+  const afterTwo = JSON.parse(await doctorTool.execute({}, exec))
+  check('doctor reports predict_calls', afterTwo.session?.predict_calls === 2, String(afterTwo.session?.predict_calls))
+  check('doctor reports artifacts', afterTwo.session?.artifacts === 2, String(afterTwo.session?.artifacts))
+  check(
+    'doctor reports a total latency',
+    typeof afterTwo.session?.total_latency_s === 'number' && afterTwo.session.total_latency_s >= 0,
+    String(afterTwo.session?.total_latency_s),
+  )
+  check('doctor reports avg latency', typeof afterTwo.session?.avg_latency_s === 'number', String(afterTwo.session?.avg_latency_s))
+  check('doctor reports last task', afterTwo.session?.last_task === 'segmentation', String(afterTwo.session?.last_task))
+
+  const reset = JSON.parse(await doctorTool.execute({ reset: true }, exec))
+  check('reset reports the counts it clears', reset.session?.predict_calls === 2, String(reset.session?.predict_calls))
+  const cleared = JSON.parse(await doctorTool.execute({}, exec))
+  check('counters are zero after reset', cleared.session?.predict_calls === 0, String(cleared.session?.predict_calls))
+
+  // 5) the built-in default is a real home path, never a literal "undefined"
   const bare = JSON.parse(JSON.stringify(await plugin.apply.length), undefined, 0) // noop keeps linters honest
   check('default mask dir is under home', join(homedir(), 'wevisone-artifacts').startsWith(homedir()), bare && '')
   check('default mask dir has no "undefined"', !join(homedir(), 'wevisone-artifacts').includes('undefined'))

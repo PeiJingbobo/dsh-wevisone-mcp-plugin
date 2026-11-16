@@ -3,6 +3,20 @@
 版本号在 `package.json`，运行时通过 `wevisone_doctor` 的 `version` 字段可见 ——
 装完重启后调一次 doctor 就知道是不是新版（顺序不符说明没重新安装）。
 
+## 0.5.0 — 2026-11-17
+
+两件事：skill 瘦身，以及成本可观测。
+
+- **skill 12.8 KB → 7.6 KB（−41%）**，22 条关键规则逐条核对全部保留：
+  工具优先、禁 base64、任务表、stats/verdict、读图三例外、禁预览图、
+  禁手搓重建（mean|Δ| ≤ 2/255）、stats.bbox 裁剪、runtime python、
+  原图名搜索、原位置二义、沙箱拒绝、present 最终位置、删脚本等。
+- **`wevisone_doctor` 返回 `session` 计数**：`predict_calls` / `failed_calls` /
+  `rejected_queries` / `artifacts` / `total_latency_s` / `avg_latency_s` /
+  `last_task` / `last_latency_s` / `since`；传 `{"reset": true}` 先报后清零。
+  这样「换了 skill 版本有没有变便宜」可以用数字比，不靠印象。
+- 测试增至 18 项断言，覆盖计数与清零。
+
 ## 0.4.4 — 2026-11-17
 
 人物会话：7 次调用、0 次读图、0 张预览、无权限拒绝 —— 目前最好的一轮。仍有两处可改：
