@@ -115,6 +115,19 @@ The server owns the alpha math, so the classic traps cannot reach you: no PNG ca
 threshold as `stats.bbox`. Use `"union"` for one subject made of several mattes, `"each"`
 when the user wants the objects separately. Present the `local_path`s.
 
+**`compose` and your own script are alternatives, not a checklist.** Asking for cutouts
+*and* compositing by hand pays twice and ships the hand-made one. Pick:
+
+| situation | do |
+|---|---|
+| one query covers the whole subject | `compose`, deliver `cutouts[]`, done |
+| the subject needs several queries (fruit **and** leaves) | **no** `compose`; run the queries, union the mattes yourself once, save |
+
+**Put the whole subject in one query.** `"orange fruit with leaves"` returns one set of
+mattes; asking for `"orange fruit"` and then `"green leaf"` costs a second predict (tens of
+seconds) and gives you two partial cutouts that neither one is the answer. A second call is
+a *different* subject — its `cutouts` never contain the first batch's pixels.
+
 ## Only if `compose` is unavailable
 
 ```python

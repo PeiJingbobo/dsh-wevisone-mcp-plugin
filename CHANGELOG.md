@@ -3,6 +3,19 @@
 版本号在 `package.json`，运行时通过 `wevisone_doctor` 的 `version` 字段可见 ——
 装完重启后调一次 doctor 就知道是不是新版（顺序不符说明没重新安装）。
 
+## 0.6.1 — 2026-11-17
+
+橙子复跑：0 次读图、0 张预览、alpha 峰值 255、角落 0、交付在 Downloads，token < 300k。
+仍有一处双重付费：
+
+- 两次 predict 都请求了 `compose`（下载 4 个 cutout 约 2.5 MB），最后却用自写脚本
+  对 7 张掩码取并集交付 —— cutout 全被删掉。
+- 两个 query（`orange fruit` + `green leaf`）导致两次推理（12.2s + 22.6s），
+  且两次的 cutout 都不完整。
+
+skill 补两条：`compose` 与自写脚本二选一（表格给出何时用哪个）；主体有多个部分时
+一个 query 写全（"orange fruit with leaves"），第二次调用是另一个主体，cutout 不含前一批。
+
 ## 0.6.0 — 2026-11-17
 
 橙子会话暴露两个真问题：token 没降、抠图边缘发灰。
