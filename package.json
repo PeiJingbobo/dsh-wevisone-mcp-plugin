@@ -13,7 +13,8 @@
     "index.js",
     "cordis.patch.yml",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "skills/"
   ],
   "keywords": [
     "dsh",

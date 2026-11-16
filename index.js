@@ -12,16 +12,71 @@
  * @module @wevisone/dsh-wevisone-mcp-plugin
  */
 
+import { readFileSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, resolve } from 'node:path'
 
 export const name = '@wevisone/dsh-wevisone-mcp-plugin'
 
-export const inject = ['tools']
+export const inject = ['tools', 'skills']
 
 const DEFAULT_ENDPOINT = 'http://127.0.0.1:8000'
 const DEFAULT_TIMEOUT_MS = 180_000
 const DEFAULT_MASK_DIR = 'wevisone-artifacts'
+
+/**
+ * Skills that teach the model how to drive these tools. Content lives in
+ * `skills/*.md` so it can be reviewed and edited without touching code; the
+ * metadata stays here because it is what the catalog shows.
+ */
+const SKILLS = [
+  {
+    name: 'wevisone-vision',
+    file: 'skills/wevisone-vision.md',
+    description:
+      'Run a local image through the WeVisOne-VL vision model: detection, referring, counting, ' +
+      'pointing, OCR, segmentation and alpha matting. Pass a file path and get normalised boxes ' +
+      'plus PNG matte paths written next to you — no image bytes enter the conversation.',
+    whenToUse:
+      'Use when a task needs to look at an image on this machine: find/count/locate an object, ' +
+      'read text, or cut out an object as a PNG mask. Not for generating images.',
+  },
+]
+
+function registerSkills(ctx) {
+  const register = ctx?.skills?.register
+  if (typeof register !== 'function') {
+    ctx?.logger?.warn?.('dsh-wevisone-mcp-plugin: no `skills` service; tool guidance is not registered')
+    return () => {}
+  }
+  const disposers = []
+  for (const entry of SKILLS) {
+    let content
+    try {
+      content = readFileSync(new URL(`./${entry.file}`, import.meta.url), 'utf8')
+    } catch (error) {
+      ctx.logger?.warn?.(`dsh-wevisone-mcp-plugin: cannot read ${entry.file}: ${error.message}`)
+      continue
+    }
+    try {
+      disposers.push(
+        register.call(ctx.skills, {
+          name: entry.name,
+          description: entry.description,
+          whenToUse: entry.whenToUse,
+          content,
+        }),
+      )
+    } catch (error) {
+      ctx.logger?.warn?.(`dsh-wevisone-mcp-plugin: cannot register ${entry.name}: ${error.message}`)
+    }
+  }
+  return async () => {
+    for (const dispose of disposers.reverse()) {
+      try { dispose() } catch { /* the registry is going away anyway */ }
+    }
+  }
+}
 
 function normaliseEndpoint(value) {
   return String(value ?? DEFAULT_ENDPOINT).replace(/\/+$/, '')
@@ -206,8 +261,10 @@ export async function apply(ctx, config = {}) {
 
   // register() returns a disposer bound to this plugin's fiber scope.
   const disposers = [ctx.tools.register(predictTool), ctx.tools.register(doctorTool)]
+  const disposeSkills = registerSkills(ctx)
 
   return async () => {
+    await disposeSkills()
     for (const dispose of disposers.reverse()) dispose()
   }
 }

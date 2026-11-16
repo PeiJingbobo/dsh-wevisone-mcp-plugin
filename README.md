@@ -14,6 +14,10 @@
 插件本身**不跑模型**：它连一台 WeVisOne-VL 服务（见
 [WeVisOne-VL-MCP](https://github.com/PeiJingbobo/WeVisOne-VL-MCP)）。
 
+> **它不是 MCP 客户端。** 名字里的 `mcp` 指它连的那个服务叫 WeVisOne-VL-**MCP**。
+> 它通过 `ctx.tools.register()` 注册原生工具，用普通 HTTP REST（`/predict`、`/artifacts`）
+> 和服务器通信 —— 不经过 MCP 的 JSON-RPC。要 MCP 协议本身请用主仓库的 MCP 端点。
+
 ## 安装
 
 ```sh
@@ -51,6 +55,18 @@ npm pack && dsh plugin add ./dsh-wevisone-mcp-plugin-*.tgz
 ```sh
 node scripts/check_dsh_yaml.mjs     # 在 WeVisOne-VL-MCP 仓库里
 ```
+
+## 技能（Skill）
+
+插件会往 DSH 的技能目录里注册一个 **`wevisone-vision`** skill，内容是
+`skills/wevisone-vision.md`：11 个任务的适用场景与 query 要求、返回字段怎么读
+（归一化坐标、`rejected` 语义、掩码 `local_path`）、常见坑（别传 base64、
+`detection` 不出掩码、一次一张图）。
+
+作用是在模型调用工具**之前**就告诉它怎么用，而不是靠试错。内容改完不需要动代码，
+重新 `dsh plugin add` 或重启 DSH 即可生效。
+
+没有 `skills` 服务的环境会跳过这一步（只打一条警告），工具本身照常可用。
 
 ## 工具
 
