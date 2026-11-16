@@ -62,7 +62,10 @@ wevisone_predict({
   "ok": true, "task": "segmentation", "query": "sofa", "rejected": false,
   "boxes": [[0.03, 0.454, 0.964, 0.876]], "box_count": 1,
   "artifacts": [{"index": 0, "url": "/artifacts/…", "bytes": 23538,
-                 "local_path": "/Users/you/wevisone-masks/segmentation-000-….png"}],
+                 "local_path": "/Users/you/wevisone-masks/segmentation-000-….png",
+                 "stats": {"alpha_min": 0.0, "alpha_max": 1.0, "alpha_mean": 0.25,
+                           "coverage": 0.26, "size": [640, 640],
+                           "bbox": [19, 290, 617, 560], "touches_edge": false}}],
   "artifact_count": 1, "latency_s": 3.2
 }
 ```
@@ -118,6 +121,37 @@ src.save(r"C:/path/photo_cutout.png")         # RGBA PNG, background transparent
 keeps the transparent margin out of the file. If the subject looks half-transparent,
 the matte was resized — open both and check `matte.size == src.size` before cropping.
 
+## Verify with the numbers, not by opening the image
+
+`stats` already answers "is this matte sane". Opening the PNG costs a whole image in
+your context; these fields cost a few dozen bytes. **Do not call `read_image` on a
+matte to check that it worked.**
+
+| field | sane range | what a bad value means |
+|---|---|---|
+| `coverage` | 0.01 – 0.9 | `0` → empty mask, the query missed; `>0.95` → mask leaked over the frame |
+| `alpha_max` | ≥ 0.9 | lower → weak matte, or the subject really is translucent (glass, smoke, water) |
+| `alpha_mean` | 0.05 – 0.6 | very low with decent coverage → only edges captured |
+| `touches_edge` | `false` | `true` → subject likely clipped by the frame, or mask bleeding into the border |
+| `bbox` | inside `0..size` | compare with the reported `boxes` (multiply by `size`) — the subject should sit near them |
+| `size` | any | the matte's own pixel size; the server may downscale, so resize to the source size before compositing |
+
+Checks that need no image at all:
+```python
+# after the download, before composing
+assert 0.01 <= stats["coverage"] <= 0.9, stats
+assert stats["alpha_max"] >= 0.9, stats
+assert not stats["touches_edge"], stats
+```
+
+**Open the image only when:**
+1. you must choose between several masks and the areas are close, so you need to know
+   *which object* each one is; or
+2. the numbers flagged a problem and you want to see the shape of it; or
+3. the user explicitly asked for a visual preview.
+
+Otherwise report the numbers and move on. A cutout task should cost zero image reads.
+
 ## When the user says "save it where the original is"
 
 The attachment path is content-addressed and its **file name is the user's original
@@ -150,6 +184,9 @@ is what "原位置" means; asking for a path is a fallback only when the search 
   `segmentation`/`matting` write mattes. Asking for a matte from `detection` returns
   nothing useful.
 - **One image per call.** Loop for batches; do not pass arrays.
+- **`read_image` is the expensive move.** Each call puts a full image into this
+  conversation. `stats` covers correctness; only look when identity or a visual
+  judgement is genuinely needed.
 - **`matting` can return many masks.** Every `<OBJ>` in the answer becomes an artifact,
   and each one costs a decode pass. For "cut out this one object" use `segmentation`;
   if you already have several masks, pick by area (`matte.getbbox()` size), not by index.

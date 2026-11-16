@@ -116,7 +116,9 @@ wevisone_predict({
   "artifacts": [{
     "index": 0, "url": "/artifacts/e5c3ac…", "bytes": 23538,
     "content_type": "image/png",
-    "local_path": "/abs/wevisone-masks/segmentation-000-e5c3ac….png"
+    "local_path": "/abs/wevisone-masks/segmentation-000-e5c3ac….png",
+    "stats": {"coverage": 0.26, "alpha_max": 1.0, "alpha_mean": 0.25,
+              "bbox": [19, 290, 617, 560], "touches_edge": false, "size": [640, 640]}
   }],
   "latency_s": 3.2
 }

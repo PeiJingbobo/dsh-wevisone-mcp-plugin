@@ -23,7 +23,7 @@ export const inject = ['tools', 'skills']
 
 const PKG_NAME = 'dsh-wevisone-mcp-plugin'
 // Keep in sync with package.json; test/save-dir.mjs asserts they match.
-const PKG_VERSION = '0.3.1'
+const PKG_VERSION = '0.4.0'
 const DEFAULT_ENDPOINT = 'http://127.0.0.1:8000'
 const DEFAULT_TIMEOUT_MS = 180_000
 // homedir() is defined on every platform; process.env.HOME is not (Windows).
