@@ -1,0 +1,42 @@
+{
+  "name": "dsh-wevisone-mcp-plugin",
+  "version": "0.1.0",
+  "description": "WeVisOne-VL visual perception for DeepSeek Harness: local image in, boxes and alpha mattes out, without base64 in the model context.",
+  "license": "MIT",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "dsh",
+    "plugin",
+    "vision",
+    "wevisone",
+    "segmentation",
+    "matting"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PeiJingbobo/dsh-wevisone-mcp-plugin.git"
+  },
+  "homepage": "https://github.com/PeiJingbobo/dsh-wevisone-mcp-plugin",
+  "bugs": {
+    "url": "https://github.com/PeiJingbobo/dsh-wevisone-mcp-plugin/issues"
+  }
+}
