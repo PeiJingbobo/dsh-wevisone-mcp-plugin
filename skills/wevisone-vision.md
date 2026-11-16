@@ -140,6 +140,12 @@ matte to check that it worked.**
 **`verdict` is the answer.** `"ok"` means the matte is usable — compose it and finish.
 `"suspect"` comes with `problems` (e.g. `["empty mask"]`) — report those; do not "have a look".
 
+`"ok"` also means **do not write inspection scripts to double-check**. No region probes, no
+connected-component audits, no re-composite "just to be safe": the server already measured
+the mask. If you want one more number, compute it inside the same composite script — one
+write, one run — instead of a second round trip. A clean `verdict` run is: predict →
+compose → save → done.
+
 Checking `verdict` costs nothing:
 ```python
 if stats["verdict"] != "ok":
@@ -162,6 +168,29 @@ The numbers already answered the question.
 
 A cutout costs **zero** image reads. One is the hard ceiling and needs a reason from the
 list above.
+
+## Saving into a folder outside the workspace
+
+Writing the result next to the original usually lands outside the session workspace, and the
+file sandbox will refuse it:
+
+```
+Copy-Item : 对路径 "...\Downloads\x.png" 的访问被拒绝。  (AccessDenied)
+```
+
+That refusal is not a reason to save somewhere else. Do exactly one of these:
+
+1. **Retry the same copy with sandbox escalation** — `sandbox_permissions: danger-full-access`
+   plus a `justification` saying the user asked for the original folder. This is the normal
+   path and it works; the tool asks the user for approval.
+2. If approval is unavailable, keep the file in the workspace and tell the user the exact
+   command to copy it themselves.
+
+Never silently deliver only the workspace copy after a denial — that is precisely the step
+the user cares about.
+
+When presenting, list the files **at their final location** (the original folder), not the
+intermediate workspace copies.
 
 **Do not rebuild the mask by hand because the edges look imperfect.** Semantic mattes lose
 fine detail (whiskers, thin lines) by nature — that is expected, not a defect. Rebuild only
