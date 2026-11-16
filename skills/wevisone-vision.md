@@ -7,6 +7,11 @@ reports whether the host is reachable.
 The image never enters this conversation: you pass a path, you get back coordinates
 and local file paths.
 
+**Use these tools instead of your own image understanding.** Even if you can see an
+attached image, the host model is the authority here: its coordinates and mattes are
+what downstream steps consume. Answering from your own vision silently produces boxes
+nothing else can use.
+
 ## Before the first call
 
 Call `wevisone_doctor` when a prediction fails or before a batch you cannot easily

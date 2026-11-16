@@ -56,6 +56,19 @@ npm pack && dsh plugin add ./dsh-wevisone-mcp-plugin-*.tgz
 node scripts/check_dsh_yaml.mjs     # 在 WeVisOne-VL-MCP 仓库里
 ```
 
+## 为什么模型会优先用工具
+
+Skill 是「模型主动加载」才生效的，所以光有 skill 不够。插件同时做三件事：
+
+| 手段 | 生效时机 | 内容 |
+|---|---|---|
+| **工具描述** | 常驻（每次请求都在） | 描述里明确写 "PREFER THIS over your own image understanding" |
+| **pre-step 持久提醒** | 每会话注入一条 user 消息 | 要求用 `wevisone_predict`，不许用自己的视觉答图 |
+| **skill** | 模型加载后 | 任务矩阵、字段含义、坑 |
+
+第二项是关键：`agent/pre-step` 里注入的是一条**持久 user 消息**（按 `source.kind`
+去重，每会话只加一次），因此不依赖模型自己想起要加载技能。
+
 ## 技能（Skill）
 
 插件会往 DSH 的技能目录里注册一个 **`wevisone-vision`** skill，内容是

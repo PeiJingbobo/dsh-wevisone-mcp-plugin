@@ -44,6 +44,54 @@ const SKILLS = [
   },
 ]
 
+let hostCreateUserMessage
+try {
+  ({ createUserMessage: hostCreateUserMessage } = await import('@deepseek-ai/dsh-llm'))
+} catch {
+  hostCreateUserMessage = undefined
+}
+
+const REMINDER_KIND = 'dsh-wevisone-vision-reminder'
+
+const REMINDER_TEXT = [
+  '<EXTREMELY_IMPORTANT>',
+  '**The WeVisOne-VL vision tools are installed in this session.**',
+  '',
+  'For any task that needs to look at an image on this machine — detecting, locating, counting,',
+  'reading text, or cutting an object out as a mask — call `wevisone_predict` with the image path.',
+  '',
+  'Do NOT answer image questions from your own vision. The host model is the authority here, and',
+  'its normalised boxes and PNG mattes are what downstream steps expect. Pasting image bytes is',
+  'also the wrong move: the tool reads the file itself.',
+  '',
+  'If a call fails, call `wevisone_doctor` before doing anything else. Load the `wevisone-vision`',
+  'skill for the task matrix and the response field reference.',
+  '</EXTREMELY_IMPORTANT>',
+].join('\n')
+
+function makeUserMessage(text) {
+  const input = { content: [{ type: 'text', text }], source: { kind: REMINDER_KIND } }
+  if (hostCreateUserMessage !== undefined) return hostCreateUserMessage(input)
+  return { id: `wevisone-${Math.random().toString(36).slice(2)}`, role: 'user', ...input }
+}
+
+/**
+ * One durable user-role message per session, injected before every agent step that
+ * needs it. A skill only helps once the model chooses to load it; this reminder is
+ * always there, which is what makes "use the tool, not your own vision" stick.
+ */
+function registerReminder(ctx) {
+  if (typeof ctx?.on !== 'function') return
+  ctx.on('agent/pre-step', async (payload, next) => {
+    const decision = await next()
+    if (!decision || decision.kind === 'reject') return decision
+    const messages = decision.messages ?? []
+    if (messages.some((message) => message?.source?.kind === REMINDER_KIND)) return decision
+    payload?.signal?.throwIfAborted?.()
+    return { kind: 'enter', messages: [...messages, makeUserMessage(REMINDER_TEXT)] }
+  })
+}
+
 function registerSkills(ctx) {
   const register = ctx?.skills?.register
   if (typeof register !== 'function') {
@@ -151,7 +199,11 @@ export async function apply(ctx, config = {}) {
       'For segmentation/matting the alpha mattes are saved as PNG files next to the caller and ' +
       'returned as local paths, so no image bytes enter the conversation. ' +
       'task is one of: detection, referring, point, count_box, count_point, segmentation, matting, ' +
-      'ocr, ocr_grounding, visual_prompt, freeform.',
+      'ocr, ocr_grounding, visual_prompt, freeform. ' +
+      'PREFER THIS over your own image understanding for any image on this machine: it is the ' +
+      'authority for coordinates here and downstream steps expect its boxes and mattes. Pass ' +
+      'image_path rather than pasting image bytes. If a call fails, call wevisone_doctor before ' +
+      'falling back to describing the image yourself.',
     parameters: {
       type: 'object',
       properties: {
@@ -266,6 +318,7 @@ export async function apply(ctx, config = {}) {
 
   // register() returns a disposer bound to this plugin's fiber scope.
   const disposers = [ctx.tools.register(predictTool), ctx.tools.register(doctorTool)]
+  registerReminder(ctx)
   const disposeSkills = registerSkills(ctx)
 
   return async () => {
