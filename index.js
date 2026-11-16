@@ -20,6 +20,7 @@ export const name = '@wevisone/dsh-wevisone-mcp-plugin'
 
 export const inject = ['tools', 'skills']
 
+const PKG_NAME = 'dsh-wevisone-mcp-plugin'
 const DEFAULT_ENDPOINT = 'http://127.0.0.1:8000'
 const DEFAULT_TIMEOUT_MS = 180_000
 const DEFAULT_MASK_DIR = 'wevisone-artifacts'
@@ -65,6 +66,10 @@ function registerSkills(ctx) {
           description: entry.description,
           whenToUse: entry.whenToUse,
           content,
+          // `source` and `provider` are required when the registry loads the
+          // body back out; the runtime defaults cover provider only.
+          source: PKG_NAME,
+          invocation: { modelInvocable: true, userInvocable: true },
         }),
       )
     } catch (error) {
