@@ -112,15 +112,26 @@ Then compose once — do not hand-roll this three times:
 from PIL import Image
 src   = Image.open(r"C:/path/photo.jpg").convert("RGBA")
 matte = Image.open(r"C:/work/out/segmentation-000-….png").convert("L")
-box   = matte.getbbox()                      # trim empty margin (also speeds everything up)
-src, matte = src.crop(box), matte.crop(box)
-src.putalpha(matte)                           # one line; no per-pixel loop
-src.save(r"C:/path/photo_cutout.png")         # RGBA PNG, background transparent
+if matte.size != src.size:                    # the server may downscale
+    matte = matte.resize(src.size, Image.LANCZOS)
+
+x0, y0, x1, y1 = stats["bbox"]                # from the predict response, 5% threshold
+trim_box = (x0, y0, x1 + 1, y1 + 1)           # PIL crop is exclusive on the right
+
+full = src.copy(); full.putalpha(matte)       # whole canvas, subject in place
+full.save(r"C:/path/photo_cutout_full.png")
+
+trimmed = src.crop(trim_box)
+trimmed.putalpha(matte.crop(trim_box))
+trimmed.save(r"C:/path/photo_cutout.png")
 ```
 
-`putalpha` is the whole trick: the matte already is the alpha channel. `getbbox()`
-keeps the transparent margin out of the file. If the subject looks half-transparent,
-the matte was resized — open both and check `matte.size == src.size` before cropping.
+`putalpha` is the whole trick: the matte already is the alpha channel — no per-pixel loop.
+
+**Do not trim with a bare `matte.getbbox()`.** A soft matte keeps alpha 1–12 scattered
+around the edges, so `getbbox()` sees "content" almost everywhere and the "trimmed" file
+comes out nearly the full canvas (a real run got 516×479 instead of 471×432).
+`stats["bbox"]` is the same measurement at a sane threshold — use it.
 
 ## Verify with the numbers, not by opening the image
 
@@ -178,7 +189,15 @@ file sandbox will refuse it:
 Copy-Item : 对路径 "...\Downloads\x.png" 的访问被拒绝。  (AccessDenied)
 ```
 
-That refusal is not a reason to save somewhere else. Do exactly one of these:
+**Best: never copy at all.** Have the one composite script `save()` straight to the final
+path (the original folder). That is a single write inside a normal tool run and avoids a
+second step — and a second refusal — entirely:
+
+```python
+full.save(os.path.join(R"\Users\you\Downloads", "photo_cutout_full.png"))
+```
+
+If a separate copy is already needed and gets refused, do exactly one of these:
 
 1. **Retry the same copy with sandbox escalation** — `sandbox_permissions: danger-full-access`
    plus a `justification` saying the user asked for the original folder. This is the normal
@@ -268,3 +287,5 @@ is what "原位置" means; asking for a path is a fallback only when the search 
   if you already have several masks, pick by area (`matte.getbbox()` size), not by index.
 - **`save_dir` is per call** and overrides the configured `maskDir`; use it so masks land
   next to the output you are building.
+- **Delete your helper script when the run is done** (`Remove-Item cutout.py`). It is
+  scaffolding, not a deliverable, and leaving three of them per task is clutter.
