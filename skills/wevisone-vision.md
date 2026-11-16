@@ -65,7 +65,8 @@ wevisone_predict({
                  "local_path": "/Users/you/wevisone-masks/segmentation-000-….png",
                  "stats": {"alpha_min": 0.0, "alpha_max": 1.0, "alpha_mean": 0.25,
                            "coverage": 0.26, "size": [640, 640],
-                           "bbox": [19, 290, 617, 560], "touches_edge": false}}],
+                           "bbox": [19, 290, 617, 560], "touches_edge": false,
+                           "verdict": "ok"}}],
   "artifact_count": 1, "latency_s": 3.2
 }
 ```
@@ -136,23 +137,31 @@ matte to check that it worked.**
 | `bbox` | inside `0..size` | compare with the reported `boxes` (multiply by `size`) — the subject should sit near them |
 | `size` | any | the matte's own pixel size; the server may downscale, so resize to the source size before compositing |
 
-Checks that need no image at all:
+**`verdict` is the answer.** `"ok"` means the matte is usable — compose it and finish.
+`"suspect"` comes with `problems` (e.g. `["empty mask"]`) — report those; do not "have a look".
+
+Checking `verdict` costs nothing:
 ```python
-# after the download, before composing
-assert 0.01 <= stats["coverage"] <= 0.9, stats
-assert stats["alpha_max"] >= 0.9, stats
-assert not stats["touches_edge"], stats
+if stats["verdict"] != "ok":
+    raise SystemExit("mask unusable: " + ", ".join(stats.get("problems", [])))
+# otherwise: compose and stop
 ```
 
 **Open the image only when:**
 1. you must choose between several masks and the areas are close, so you need to know
    *which object* each one is; or
-2. the numbers flagged a problem and you want to see the shape of it; or
-3. the user explicitly asked for a visual preview.
+2. `verdict` is `"suspect"` and seeing the shape tells you whether to retry with a better
+   `query`; or
+3. the user explicitly asked to see the result.
 
-Otherwise report the numbers and move on. **A cutout task should cost zero image
-reads; treat one as the ceiling.** More than one means you are re-verifying something the
-numbers already answered.
+**Do not build previews to look at.** No checkerboard renders, no "original | cutout |
+back-in-place" comparison panels, no mask-overlay-on-the-source images — **unless the
+user asked for one**. Those images contain the whole scene (all the content you were
+told to cut away), and reading one puts that scene into the conversation at full price.
+The numbers already answered the question.
+
+A cutout costs **zero** image reads. One is the hard ceiling and needs a reason from the
+list above.
 
 **Do not rebuild the mask by hand because the edges look imperfect.** Semantic mattes lose
 fine detail (whiskers, thin lines) by nature — that is expected, not a defect. Rebuild only
@@ -221,8 +230,10 @@ is what "原位置" means; asking for a path is a fallback only when the search 
   nothing useful.
 - **One image per call.** Loop for batches; do not pass arrays.
 - **`read_image` is the expensive move.** Each call puts a full image into this
-  conversation. `stats` covers correctness; only look when identity or a visual
+  conversation. `stats.verdict` covers correctness; only look when identity or a visual
   judgement is genuinely needed.
+- **Preview images are not deliverables.** A checkerboard/overlay/comparison render is
+  extra work that also drags the whole scene into context when read. Ship the RGBA PNG.
 - **`matting` can return many masks.** Every `<OBJ>` in the answer becomes an artifact,
   and each one costs a decode pass. For "cut out this one object" use `segmentation`;
   if you already have several masks, pick by area (`matte.getbbox()` size), not by index.

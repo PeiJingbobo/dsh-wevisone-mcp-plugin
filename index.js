@@ -23,7 +23,7 @@ export const inject = ['tools', 'skills']
 
 const PKG_NAME = 'dsh-wevisone-mcp-plugin'
 // Keep in sync with package.json; test/save-dir.mjs asserts they match.
-const PKG_VERSION = '0.4.1'
+const PKG_VERSION = '0.4.2'
 const DEFAULT_ENDPOINT = 'http://127.0.0.1:8000'
 const DEFAULT_TIMEOUT_MS = 180_000
 // homedir() is defined on every platform; process.env.HOME is not (Windows).
@@ -70,6 +70,9 @@ const REMINDER_TEXT = [
   '',
   'If a call fails, call `wevisone_doctor` before doing anything else. Load the `wevisone-vision`',
   'skill for the task matrix and the response field reference.',
+  '',
+  'Do NOT build preview/comparison images to check a matte, and do NOT `read_image` one:',
+  '`stats.verdict` in the predict response already says whether the mask is usable.',
   '</EXTREMELY_IMPORTANT>',
 ].join('\n')
 

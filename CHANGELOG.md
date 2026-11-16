@@ -3,6 +3,18 @@
 版本号在 `package.json`，运行时通过 `wevisone_doctor` 的 `version` 字段可见 ——
 装完重启后调一次 doctor 就知道是不是新版（顺序不符说明没重新安装）。
 
+## 0.4.2 — 2026-11-17
+
+粉发女孩会话：0.4.1 已装上（doctor 报版本、mask_dir 修好、原图搜到、python 提前取），
+但仍自造 `preview_overlay.png` / `preview_checker.png` 并读了 2 次图。
+
+- 服务端 `stats` 新增 `verdict`（`ok` / `suspect` + `problems`），把「掩码能不能用」
+  变成一次字符串比较，不需要再看图。
+- skill 明确**不许自造预览/对比图**（棋盘格、overlay、三联对比），除非用户要；
+  这类图会把整个场景（正是被抠掉的内容）带进上下文。
+- skill 的校验顺序改为先读 `verdict`，把「看图」收窄到三种有理由的情形。
+- pre-step 持久提醒补一句：不要造预览图、不要读它们。
+
 ## 0.4.1 — 2026-11-17
 
 来自猫咪抠像会话（装了 stats 但没装 0.4.0 提示，读了 6 次图）：
