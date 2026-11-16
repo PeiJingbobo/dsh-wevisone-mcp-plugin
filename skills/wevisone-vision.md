@@ -150,7 +150,43 @@ assert not stats["touches_edge"], stats
 2. the numbers flagged a problem and you want to see the shape of it; or
 3. the user explicitly asked for a visual preview.
 
-Otherwise report the numbers and move on. A cutout task should cost zero image reads.
+Otherwise report the numbers and move on. **A cutout task should cost zero image
+reads; treat one as the ceiling.** More than one means you are re-verifying something the
+numbers already answered.
+
+**Do not rebuild the mask by hand because the edges look imperfect.** Semantic mattes lose
+fine detail (whiskers, thin lines) by nature — that is expected, not a defect. Rebuild only
+when `stats` show a real failure (empty, leaked, clipped) **or** the user asks for higher
+edge quality. If you do rebuild, the same numeric check must hold: composite back onto the
+original background and require `mean|Δ| ≤ 2/255`.
+
+## Use the workspace python, not the system one
+
+`PIL`/`numpy` live in the DSH runtime, not in whatever `python` is on PATH. Calling the
+system interpreter costs a failed step every time:
+
+```powershell
+# wrong: ModuleNotFoundError: No module named 'PIL'
+python -c "from PIL import Image; ..."
+
+# right: take the path from load_workspace_dependencies once, reuse it
+& "C:\Users\<you>\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\python\python.exe" script.py
+```
+
+Call `load_workspace_dependencies` **before** the first image step, not after a failure.
+
+## "Original place": two meanings, resolve both in one pass
+
+"放到原位置" can mean either, and guessing wrong costs a round trip:
+
+| reading | what the user gets |
+|---|---|
+| **canvas position** — subject stays where it sat in the frame | full-size RGBA with alpha, no crop |
+| **directory** — file next to the source image | a copy beside the original file |
+
+Do not pick one and hope. Produce the full-canvas RGBA (cheap, it is the same composite)
+**and** drop a copy next to the source using the search rule below, then say which is
+which. That satisfies both readings with zero extra questions.
 
 ## When the user says "save it where the original is"
 

@@ -3,6 +3,19 @@
 版本号在 `package.json`，运行时通过 `wevisone_doctor` 的 `version` 字段可见 ——
 装完重启后调一次 doctor 就知道是不是新版（顺序不符说明没重新安装）。
 
+## 0.4.1 — 2026-11-17
+
+来自猫咪抠像会话（装了 stats 但没装 0.4.0 提示，读了 6 次图）：
+
+- skill 明确「抠像最多读 1 次图」，并说明语义掩膜丢细节是常态、**不要因为边缘不完美
+  就手工重建**；重建只在 stats 报警或用户要求更高边缘质量时做，且需满足
+  `mean|Δ| ≤ 2/255` 的合成回验。
+- skill 补 python 运行时规则：用 `load_workspace_dependencies` 给的解释器，
+  系统 `python` 没有 PIL（此前白费一步）。
+- 「放到原位置」的两种读法（画布坐标 / 原目录）一次全给，不再二选一。
+- 插件检测 `maskDir` 里的字面量 `undefined`（Windows 上 `process.env.HOME` 未定义
+  会导致），警告并回退到 `<家目录>/wevisone-artifacts`，不再往垃圾目录写掩码。
+
 ## 0.4.0 — 2026-11-17
 
 - 服务端 `predict` 的每个 artifact 新增 `stats`：`coverage`、`alpha_min/max/mean`、

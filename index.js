@@ -23,7 +23,7 @@ export const inject = ['tools', 'skills']
 
 const PKG_NAME = 'dsh-wevisone-mcp-plugin'
 // Keep in sync with package.json; test/save-dir.mjs asserts they match.
-const PKG_VERSION = '0.4.0'
+const PKG_VERSION = '0.4.1'
 const DEFAULT_ENDPOINT = 'http://127.0.0.1:8000'
 const DEFAULT_TIMEOUT_MS = 180_000
 // homedir() is defined on every platform; process.env.HOME is not (Windows).
@@ -163,7 +163,18 @@ async function callJson(fetchImpl, url, init, timeoutMs) {
 export async function apply(ctx, config = {}) {
   const endpoint = normaliseEndpoint(config.endpoint)
   const token = config.token ?? process.env.WEVISONE_MCP_TOKEN ?? ''
-  const maskDir = resolve(config.maskDir ?? DEFAULT_MASK_DIR)
+  // A config that used process.env.HOME on Windows resolves to a literal
+  // ".../undefined/wevisone-masks" on disk. Nobody meant that, so correct it loudly
+  // instead of quietly writing masks into a junk directory.
+  let maskDir = resolve(config.maskDir ?? DEFAULT_MASK_DIR)
+  if (/(^|[\\/])undefined([\\/]|$)/.test(maskDir)) {
+    ctx?.logger?.warn?.(
+      `dsh-wevisone-mcp-plugin: maskDir "${maskDir}" contains "undefined" — ` +
+        `process.env.HOME is not set on Windows. Using ${DEFAULT_MASK_DIR} instead; ` +
+        `set maskDir with process.getBuiltinModule("node:os").homedir() to silence this.`,
+    )
+    maskDir = resolve(DEFAULT_MASK_DIR)
+  }
   const timeoutMs = Number(config.timeoutMs ?? DEFAULT_TIMEOUT_MS)
   const headers = bearer(token)
 
