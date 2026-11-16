@@ -38,8 +38,8 @@ npm pack && dsh plugin add ./dsh-wevisone-mcp-plugin-*.tgz
 - id: dsh-wevisone-mcp-plugin
   config:
     endpoint: http://192.168.1.12:8000
-    token: !!js '`${process.env.WEVISONE_MCP_TOKEN || process.getBuiltinModule("node:fs").readFileSync(process.env.HOME + "/.dsh/wevisone-token", "utf8").trim()}`'
-    maskDir: !!js '`${process.env.HOME}/wevisone-masks`'
+    token: !!js '`${process.env.WEVISONE_MCP_TOKEN || process.getBuiltinModule("node:fs").readFileSync(process.getBuiltinModule("node:os").homedir() + "/.dsh/wevisone-token", "utf8").trim()}`'
+    maskDir: !!js '`${process.getBuiltinModule("node:os").homedir()}/wevisone-masks`'
     timeoutMs: 180000
 ```
 
@@ -47,7 +47,7 @@ npm pack && dsh plugin add ./dsh-wevisone-mcp-plugin-*.tgz
 |---|---|---|
 | `endpoint` | `http://127.0.0.1:8000` | WeVisOne-VL 服务地址 |
 | `token` | `$WEVISONE_MCP_TOKEN` | 共享令牌；建议从 0600 文件读，别写字面量 |
-| `maskDir` | `<cwd>/wevisone-artifacts` | 掩码落盘目录 |
+| `maskDir` | `<家目录>/wevisone-artifacts` | 掩码默认落盘目录（用 `os.homedir()`，Windows 也正确） |
 | `timeoutMs` | `180000` | 单次请求超时 |
 
 `!!js` 的值是单引号字符串，**漏掉结尾引号会让 DSH 起不来**。改完先校验再重启：
@@ -90,7 +90,7 @@ wevisone_predict({
   image_path: "C:/photos/room.jpg",   // 或用 upload_id
   task: "segmentation",
   query: "sofa",
-  save_dir: "wevisone-artifacts",     // 可选
+  save_dir: "C:/work/out",            // 可选：本次掩码落这里，优先于 maskDir
 })
 ```
 
@@ -118,6 +118,12 @@ wevisone_predict({
 ### `wevisone_doctor`
 
 报告端点、令牌是否配置、掩码目录。预测失败先调它。
+
+## 落盘位置
+
+- 配置里的 `maskDir` 是**默认值**：`<家目录>/wevisone-artifacts`
+- 每次调用传的 `save_dir` **优先**，用于把掩码放到你正在构建的输出目录
+- 返回的 `artifacts[].local_path` 就是最终路径，按它去读文件
 
 ## 注意
 

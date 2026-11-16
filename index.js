@@ -14,6 +14,7 @@
 
 import { readFileSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { basename, dirname, extname, join, resolve } from 'node:path'
 
 export const name = '@wevisone/dsh-wevisone-mcp-plugin'
@@ -23,7 +24,8 @@ export const inject = ['tools', 'skills']
 const PKG_NAME = 'dsh-wevisone-mcp-plugin'
 const DEFAULT_ENDPOINT = 'http://127.0.0.1:8000'
 const DEFAULT_TIMEOUT_MS = 180_000
-const DEFAULT_MASK_DIR = 'wevisone-artifacts'
+// homedir() is defined on every platform; process.env.HOME is not (Windows).
+const DEFAULT_MASK_DIR = join(homedir(), 'wevisone-artifacts')
 
 /**
  * Skills that teach the model how to drive these tools. Content lives in
@@ -176,7 +178,7 @@ export async function apply(ctx, config = {}) {
     )
   }
 
-  async function downloadArtifact(relativeUrl, index, task) {
+  async function downloadArtifact(relativeUrl, index, task, targetDir) {
     const response = await fetch(`${endpoint}${relativeUrl}`, {
       headers,
       signal: AbortSignal.timeout(timeoutMs),
@@ -185,9 +187,9 @@ export async function apply(ctx, config = {}) {
       throw new Error(`artifact download failed (HTTP ${response.status}) for ${relativeUrl}`)
     }
     const bytes = Buffer.from(await response.arrayBuffer())
-    await mkdir(maskDir, { recursive: true })
+    await mkdir(targetDir, { recursive: true })
     const stem = basename(relativeUrl) || `mask_${String(index).padStart(3, '0')}`
-    const path = join(maskDir, `${task}-${String(index).padStart(3, '0')}-${stem}.png`)
+    const path = join(targetDir, `${task}-${String(index).padStart(3, '0')}-${stem}.png`)
     await writeFile(path, bytes)
     return { index, path, bytes: bytes.length }
   }
@@ -252,10 +254,14 @@ export async function apply(ctx, config = {}) {
         return JSON.stringify(payload)
       }
 
+      // `save_dir` is per-call and wins over the configured maskDir.
+      const requested = (args.save_dir ?? '').trim()
+      const targetDir = requested ? resolve(requested) : maskDir
+
       const saved = []
       for (const artifact of payload.artifacts) {
         try {
-          const file = await downloadArtifact(artifact.url, artifact.index ?? saved.length, payload.task)
+          const file = await downloadArtifact(artifact.url, artifact.index ?? saved.length, payload.task, targetDir)
           saved.push({ ...artifact, local_path: file.path })
         } catch (error) {
           saved.push({ ...artifact, error: error.message })

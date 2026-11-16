@@ -46,8 +46,8 @@ wevisone_predict({
 | `point` | yes | — | one point per instance |
 | `count_box` | yes | — | count instances, with boxes |
 | `count_point` | yes | — | count only |
-| `segmentation` | yes | ✅ matte | mask one named object |
-| `matting` | yes | ✅ matte | soft alpha edge, hair/fur/glass |
+| `segmentation` | yes | ✅ matte | mask one named object — **use this for cutouts** |
+| `matting` | yes | ✅ matte | soft alpha edge (hair/fur/glass); often returns several `<OBJ>` |
 | `ocr` | no | — | read all text |
 | `ocr_grounding` | yes | — | locate a specific text string |
 | `visual_prompt` | yes | — | free-form VQA about a region |
@@ -95,6 +95,29 @@ wevisone_predict({ image_path: p, task: "ocr" })
 // the text is in r.response
 ```
 
+**Cut one object out as a transparent PNG.**
+```js
+const r = wevisone_predict({ image_path: p, task: "segmentation", query: "watermelon slice",
+                             save_dir: "C:/work/out" })   // masks land here
+// if r.box_count > 1, one mask per box: take the largest by area, not index 0
+```
+
+Then compose once — do not hand-roll this three times:
+
+```python
+from PIL import Image
+src   = Image.open(r"C:/path/photo.jpg").convert("RGBA")
+matte = Image.open(r"C:/work/out/segmentation-000-….png").convert("L")
+box   = matte.getbbox()                      # trim empty margin (also speeds everything up)
+src, matte = src.crop(box), matte.crop(box)
+src.putalpha(matte)                           # one line; no per-pixel loop
+src.save(r"C:/path/photo_cutout.png")         # RGBA PNG, background transparent
+```
+
+`putalpha` is the whole trick: the matte already is the alpha channel. `getbbox()`
+keeps the transparent margin out of the file. If the subject looks half-transparent,
+the matte was resized — open both and check `matte.size == src.size` before cropping.
+
 ## Pitfalls
 
 - **Do not paste images as base64 into this conversation.** Pass `image_path`; the
@@ -110,3 +133,8 @@ wevisone_predict({ image_path: p, task: "ocr" })
   `segmentation`/`matting` write mattes. Asking for a matte from `detection` returns
   nothing useful.
 - **One image per call.** Loop for batches; do not pass arrays.
+- **`matting` can return many masks.** Every `<OBJ>` in the answer becomes an artifact,
+  and each one costs a decode pass. For "cut out this one object" use `segmentation`;
+  if you already have several masks, pick by area (`matte.getbbox()` size), not by index.
+- **`save_dir` is per call** and overrides the configured `maskDir`; use it so masks land
+  next to the output you are building.
