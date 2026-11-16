@@ -1,3 +1,6 @@
+<!-- frozen 2026-11-17: add rules only for new failure CLASSES; variants of an existing
+     rule get its wording fixed instead. See AGENTS.md. -->
+
 # WeVisOne-VL vision tools
 
 `wevisone_predict` runs a vision model over a **local image file** and returns boxes,
