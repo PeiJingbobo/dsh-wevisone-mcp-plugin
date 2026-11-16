@@ -3,6 +3,19 @@
 版本号在 `package.json`，运行时通过 `wevisone_doctor` 的 `version` 字段可见 ——
 装完重启后调一次 doctor 就知道是不是新版（顺序不符说明没重新安装）。
 
+## 0.6.0 — 2026-11-17
+
+橙子会话暴露两个真问题：token 没降、抠图边缘发灰。
+
+- **修 alpha 量化（服务端）**：`(mask*255).astype(uint8)` 是截断，sigmoid 峰值 0.996
+  落成 **254**，所有抠图内部只有 99.6% 不透明 —— 换背景就发灰。改为 `rint` + 近 1
+  归 1，实测 255 出现（93,083 像素），边缘仍是真实软边。
+- **`stats` 改用量化后的数组**，`alpha_max` 与文件一致（此前报 1.0、文件却是 254）。
+- **服务端合成**：新参数 `compose: "union" | "each"`，直接返回 `cutouts[]`
+  （full 保位置 / tight 按 `stats.bbox` 裁剪）。客户端不用写 Python，
+  也就没有了 `/254` 补丁、`getbbox()` 裁不紧、resize 猜错这些坑。
+- 插件端透传 `compose` 并下载 cutout，返回 `local_path`。
+
 ## 0.5.0 — 2026-11-17
 
 两件事：skill 瘦身，以及成本可观测。

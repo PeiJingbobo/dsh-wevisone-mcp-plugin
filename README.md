@@ -30,6 +30,23 @@ npm pack && dsh plugin add ./dsh-wevisone-mcp-plugin-*.tgz
 
 安装后出现在 DSH 插件列表里，重启 DSH 生效。
 
+## 服务端合成抠图（`compose`）
+
+抠图不用客户端写脚本了 —— 让服务端直接合成：
+
+```js
+wevisone_predict({
+  image_path: "C:/photos/a.jpg", task: "segmentation", query: "sofa",
+  compose: "union",              // "union" 合并所有掩码；"each" 每个掩码一张
+  save_dir: "C:/photos",
+})
+// cutouts[] -> { name, variant: "full" | "tight", local_path, size, bbox }
+```
+
+- `full` 保持原画布位置，`tight` 按 `stats.bbox` 同一 5% 阈值裁剪
+- alpha 由服务端归一化：内部真正不透明（255），不再出现「整图 254 发灰」
+- 插件把 cutout 一并下载到 `save_dir`，返回 `local_path`
+
 ## 成本可观测
 
 `wevisone_doctor` 返回本插件的会话计数，用来看「这一轮到底花了多少」而不是凭感觉：

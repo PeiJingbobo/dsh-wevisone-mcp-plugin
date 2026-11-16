@@ -32,7 +32,14 @@ const server = createServer((request, response) => {
         artifact_count: 1,
         latency_s: 1.0,
         artifacts: [
-          { index: 0, url: '/artifacts/' + 'a'.repeat(32), bytes: PNG.length, content_type: 'image/png' },
+          { index: 0, url: '/artifacts/' + 'a'.repeat(32), bytes: PNG.length, content_type: 'image/png',
+            stats: { coverage: 0.26, alpha_max: 1.0, bbox: [0, 0, 9, 9], touches_edge: false, verdict: 'ok' } },
+        ],
+        cutouts: [
+          { name: 'merged', variant: 'full', url: '/artifacts/' + 'b'.repeat(32), bytes: PNG.length,
+            content_type: 'image/png', size: [10, 10], bbox: [0, 0, 9, 9] },
+          { name: 'merged', variant: 'tight', url: '/artifacts/' + 'c'.repeat(32), bytes: PNG.length,
+            content_type: 'image/png', size: [10, 10], bbox: [0, 0, 9, 9] },
         ],
       }
       const text = JSON.stringify(body)
@@ -86,7 +93,11 @@ try {
   )
   check('predict ok', first.ok === true, first.error ?? '')
   const requestedFiles = existsSync(requestedDir) ? readdirSync(requestedDir) : []
-  check('mask written to save_dir', requestedFiles.length === 1, requestedFiles.join(','))
+  check(
+    'mask written to save_dir',
+    requestedFiles.some((name) => name.startsWith('segmentation-')),
+    requestedFiles.join(','),
+  )
   check('configured maskDir untouched', !existsSync(defaultDir), defaultDir)
 
   // 2) without save_dir the configured maskDir is used
@@ -95,7 +106,11 @@ try {
   )
   check('second predict ok', second.ok === true, second.error ?? '')
   const defaultFiles = existsSync(defaultDir) ? readdirSync(defaultDir) : []
-  check('mask written to configured dir', defaultFiles.length === 1, defaultFiles.join(','))
+  check(
+    'mask written to configured dir',
+    defaultFiles.some((name) => name.startsWith('segmentation-')),
+    defaultFiles.join(','),
+  )
   check('local_path points at the real file', existsSync(second.artifacts[0].local_path), second.artifacts[0].local_path)
 
   // 3) version visibility: doctor reports it, and it matches package.json
@@ -104,10 +119,29 @@ try {
   check('doctor reports a version', typeof doctor.version === 'string' && doctor.version.length > 0, doctor.version)
   check('version matches package.json', doctor.version === pkg.version, `${doctor.version} vs ${pkg.version}`)
 
+  // 3b) compose: the server sends ready cutouts, the plugin saves them too
+  const composed = JSON.parse(
+    await predictTool.execute(
+      { image_path: imagePath, task: 'segmentation', query: 'sofa', compose: 'union', save_dir: requestedDir },
+      exec,
+    ),
+  )
+  check('cutouts returned', composed.cutout_count === 2, String(composed.cutout_count))
+  check(
+    'cutout files exist',
+    composed.cutouts.every((c) => existsSync(c.local_path)),
+    composed.cutouts.map((c) => c.local_path.split('/').pop()).join(','),
+  )
+  check(
+    'cutout variants named',
+    composed.cutouts.map((c) => c.variant).join(',') === 'full,tight',
+    composed.cutouts.map((c) => c.variant).join(','),
+  )
+
   // 4) session cost counters: doctor reports the work already done, and resets on demand
   const afterTwo = JSON.parse(await doctorTool.execute({}, exec))
-  check('doctor reports predict_calls', afterTwo.session?.predict_calls === 2, String(afterTwo.session?.predict_calls))
-  check('doctor reports artifacts', afterTwo.session?.artifacts === 2, String(afterTwo.session?.artifacts))
+  check('doctor reports predict_calls', afterTwo.session?.predict_calls === 3, String(afterTwo.session?.predict_calls))
+  check('doctor reports artifacts', afterTwo.session?.artifacts === 3, String(afterTwo.session?.artifacts))
   check(
     'doctor reports a total latency',
     typeof afterTwo.session?.total_latency_s === 'number' && afterTwo.session.total_latency_s >= 0,
@@ -117,7 +151,7 @@ try {
   check('doctor reports last task', afterTwo.session?.last_task === 'segmentation', String(afterTwo.session?.last_task))
 
   const reset = JSON.parse(await doctorTool.execute({ reset: true }, exec))
-  check('reset reports the counts it clears', reset.session?.predict_calls === 2, String(reset.session?.predict_calls))
+  check('reset reports the counts it clears', reset.session?.predict_calls === 3, String(reset.session?.predict_calls))
   const cleared = JSON.parse(await doctorTool.execute({}, exec))
   check('counters are zero after reset', cleared.session?.predict_calls === 0, String(cleared.session?.predict_calls))
 

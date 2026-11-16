@@ -23,7 +23,7 @@ export const inject = ['tools', 'skills']
 
 const PKG_NAME = 'dsh-wevisone-mcp-plugin'
 // Keep in sync with package.json; test/save-dir.mjs asserts they match.
-const PKG_VERSION = '0.5.0'
+const PKG_VERSION = '0.6.0'
 const DEFAULT_ENDPOINT = 'http://127.0.0.1:8000'
 const DEFAULT_TIMEOUT_MS = 180_000
 // homedir() is defined on every platform; process.env.HOME is not (Windows).
@@ -268,6 +268,14 @@ export async function apply(ctx, config = {}) {
         task: { type: 'string', description: 'Perception task; defaults to detection.' },
         query: { type: 'string', description: 'Object description / label / phrase. Required for most tasks.' },
         save_dir: { type: 'string', description: 'Directory for saved mattes; defaults to a folder under the workspace.' },
+        compose: {
+          type: 'string',
+          enum: ['', 'union', 'each'],
+          description:
+            'Ask the server to composite ready RGBA cutouts: "union" merges every matte into ' +
+            'one subject, "each" keeps one per matte. Returns full-canvas and tight-cropped ' +
+            'PNGs, so no client-side image work is needed.',
+        },
       },
       additionalProperties: false,
     },
@@ -283,6 +291,7 @@ export async function apply(ctx, config = {}) {
       }
 
       const body = { task: args.task ?? 'detection', query: args.query ?? '' }
+      if (args.compose) body.compose = args.compose
       if (uploadId) {
         body.upload_id = uploadId
       } else {
@@ -334,8 +343,31 @@ export async function apply(ctx, config = {}) {
           saved.push({ ...artifact, error: error.message })
         }
       }
-      const { artifacts: _discard, ...rest } = payload
-      return JSON.stringify({ ...rest, artifacts: saved })
+      // Server-side composites, if requested: same download path, named by variant.
+      let cutouts = []
+      if (Array.isArray(payload.cutouts) && payload.cutouts.length > 0) {
+        for (const cutout of payload.cutouts) {
+          try {
+            const file = await downloadArtifact(
+              cutout.url,
+              cutout.index ?? cutouts.length,
+              `cutout-${cutout.name ?? 'subject'}-${cutout.variant ?? 'full'}`,
+              targetDir,
+            )
+            cutouts.push({ ...cutout, local_path: file.path })
+          } catch (error) {
+            cutouts.push({ ...cutout, error: error.message })
+          }
+        }
+      }
+
+      const { artifacts: _discard, cutouts: _cutouts, ...rest } = payload
+      const answer = { ...rest, artifacts: saved }
+      if (cutouts.length > 0) {
+        answer.cutouts = cutouts
+        answer.cutout_count = cutouts.length
+      }
+      return JSON.stringify(answer)
     },
     presentCall() {
       return { card: 'generic', title: 'WeVisOne prediction', kind: 'read' }

@@ -35,6 +35,7 @@ wevisone_predict({
   task: "segmentation",               // defaults to detection
   query: "sofa",                      // required except ocr / freeform
   save_dir: "C:/work/out",            // per call, overrides configured maskDir
+  compose: "union",                   // optional: server returns ready RGBA cutouts
 })
 ```
 
@@ -95,30 +96,44 @@ detail (whiskers, thin lines) by nature; that is expected. Rebuild only when `st
 a real failure or the user asks for better edges — and then it must pass the same numeric
 check: composite back onto the original background, `mean|Δ| ≤ 2/255`.
 
-## Cutout recipe
+## Cutouts: let the server composite
+
+Ask for the cutouts instead of building them:
+
+```js
+const r = wevisone_predict({
+  image_path: p, task: "segmentation", query: "sofa",
+  compose: "union",              // or "each" when every object is wanted
+  save_dir: "C:/final/dir",
+})
+// r.cutouts[] -> { name, variant: "full" | "tight", local_path, size, bbox }
+```
+
+The server owns the alpha math, so the classic traps cannot reach you: no PNG capped at
+254 instead of 255, no `getbbox()` that counts stray faint pixels, no resize guesswork.
+`full` keeps the subject at its canvas position; `tight` is cropped at the same 5%
+threshold as `stats.bbox`. Use `"union"` for one subject made of several mattes, `"each"`
+when the user wants the objects separately. Present the `local_path`s.
+
+## Only if `compose` is unavailable
 
 ```python
 from PIL import Image
 src   = Image.open(r"C:/path/photo.jpg").convert("RGBA")
 matte = Image.open(r"C:/work/out/segmentation-000-….png").convert("L")
-if matte.size != src.size:
-    matte = matte.resize(src.size, Image.LANCZOS)
+if matte.size != src.size: matte = matte.resize(src.size, Image.LANCZOS)
 
-x0, y0, x1, y1 = stats["bbox"]          # from the response, 5% threshold
+x0, y0, x1, y1 = stats["bbox"]          # never a bare matte.getbbox()
 box = (x0, y0, x1 + 1, y1 + 1)          # PIL crop is exclusive on the right
 
-full = src.copy(); full.putalpha(matte)                       # keeps canvas position
+full = src.copy(); full.putalpha(matte)
 full.save(r"C:/final/dir/photo_cutout_full.png")
-
-trim = src.crop(box); trim.putalpha(matte.crop(box))          # tight, for stickers
+trim = src.crop(box); trim.putalpha(matte.crop(box))
 trim.save(r"C:/final/dir/photo_cutout.png")
 ```
 
-`putalpha` is the whole trick — the matte *is* the alpha channel, no per-pixel loop.
-
-**Do not trim with a bare `matte.getbbox()`.** A soft matte keeps alpha 1–12 scattered
-around, so `getbbox()` sees content nearly everywhere; a real run produced 516×479 where
-`stats["bbox"]` said 471×432. Use `stats["bbox"]`.
+`putalpha` is the whole trick — the matte *is* the alpha channel. If the matte peaks at
+254 rather than 255, scale it: `matte.point(lambda v: min(255, round(v * 255 / matte.getextrema()[1])))`.
 
 ## Saving to "the original location"
 
